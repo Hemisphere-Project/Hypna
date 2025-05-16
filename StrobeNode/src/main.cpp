@@ -5,8 +5,8 @@
 
 #include "librmt/esp32_digital_led_lib.h"
 
-const int PIN_LED_RGBW = 26; // 26, 32
-const int PIN_LED_RGB = 32; 
+const int PIN_LED_RGBW = 32; // 26, 32
+const int PIN_LED_RGBW2 = 26; 
 
 int STROBE_FREQ = 100; // dHz
 int STROBE_PERIOD = 10000 / STROBE_FREQ; // ms
@@ -36,7 +36,7 @@ const char* ssid = "HYPNA-STROBE";
 const char* password = "HypnaStrobe";
 
 strand_t* stripRGBW;
-strand_t* stripRGB;
+strand_t* stripRGBW2;
 
 AsyncWebServer server(80);
 
@@ -174,9 +174,12 @@ void setup()
   digitalLeds_init();
   
   stripRGBW = digitalLeds_addStrand(
-          {.rmtChannel = 0, .gpioNum = PIN_LED_RGBW, .ledType = LED_SK6812W_V3, .brightLimit = 255, .numPixels = 1, .pixels = nullptr, ._stateVars = nullptr});
-  stripRGB = digitalLeds_addStrand(
-          {.rmtChannel = 1, .gpioNum = PIN_LED_RGB, .ledType = LED_WS2811_HS, .brightLimit = 255, .numPixels = 1, .pixels = nullptr, ._stateVars = nullptr});
+          {.rmtChannel = 0, .gpioNum = PIN_LED_RGBW, .ledType = LED_SK6812W_V3, .brightLimit = 255, .numPixels = 8, .pixels = nullptr, ._stateVars = nullptr});
+  
+  stripRGBW2 = digitalLeds_addStrand(
+          {.rmtChannel = 1, .gpioNum = PIN_LED_RGBW2, .ledType = LED_SK6812W_V3, .brightLimit = 255, .numPixels = 8, .pixels = nullptr, ._stateVars = nullptr});
+  // stripRGB = digitalLeds_addStrand(
+  //         {.rmtChannel = 1, .gpioNum = PIN_LED_RGB, .ledType = LED_WS2811_HS, .brightLimit = 255, .numPixels = 1, .pixels = nullptr, ._stateVars = nullptr});
   
   // wifi connect
   // WiFi.begin(ssid, password);
@@ -291,10 +294,15 @@ void loop()
   for (int i = 1; i < stripRGBW->numPixels; i++) stripRGBW->pixels[i] = stripRGBW->pixels[0];
   digitalLeds_updatePixels(stripRGBW);
 
-  stripRGB->pixels[0] = pixelFromRGB(redValue2, greenValue2, blueValue2);
-  for (int i = 1; i < stripRGB->numPixels; i++) stripRGB->pixels[i] = stripRGB->pixels[0];
-  digitalLeds_updatePixels(stripRGB);
+  stripRGBW2->pixels[0] = pixelFromRGBW(greenValue1, redValue1, blueValue1, whiteValue1);
+  for (int i = 1; i < stripRGBW2->numPixels; i++) stripRGBW2->pixels[i] = stripRGBW2->pixels[0];
+  digitalLeds_updatePixels(stripRGBW2);
 
+  // stripRGB->pixels[0] = pixelFromRGB(redValue2, greenValue2, blueValue2);
+  // for (int i = 1; i < stripRGB->numPixels; i++) stripRGB->pixels[i] = stripRGB->pixels[0];
+  // digitalLeds_updatePixels(stripRGB);
+  
+  Serial.println("ON");
   delay(delayON);
 
   /*
@@ -304,10 +312,15 @@ void loop()
   stripRGBW->pixels[0] = pixelFromRGBW(0, 0, 0, 0);
   for (int i = 1; i < stripRGBW->numPixels; i++) stripRGBW->pixels[i] = stripRGBW->pixels[0];
   digitalLeds_updatePixels(stripRGBW);
+
+  stripRGBW2->pixels[0] = pixelFromRGBW(0, 0, 0, 0);
+  for (int i = 1; i < stripRGBW2->numPixels; i++) stripRGBW2->pixels[i] = stripRGBW2->pixels[0];
+  digitalLeds_updatePixels(stripRGBW2);
   
-  stripRGB->pixels[0] = pixelFromRGB(0, 0, 0);
-  for (int i = 1; i < stripRGB->numPixels; i++) stripRGB->pixels[i] = stripRGB->pixels[0];
-  digitalLeds_updatePixels(stripRGB);
+  // stripRGB->pixels[0] = pixelFromRGB(0, 0, 0);
+  // for (int i = 1; i < stripRGB->numPixels; i++) stripRGB->pixels[i] = stripRGB->pixels[0];
+  // digitalLeds_updatePixels(stripRGB);
   
+  Serial.println("OFF");
   delay(delayOFF);
 }
