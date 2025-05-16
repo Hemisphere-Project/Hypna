@@ -38,7 +38,7 @@
 #ifndef ESP32_DIGITAL_LED_LIB_H
 #define ESP32_DIGITAL_LED_LIB_H
 
-#include "libfast/pixel.h"
+#include "pixel.h"
 
 #ifdef __cplusplus
 extern "C"
