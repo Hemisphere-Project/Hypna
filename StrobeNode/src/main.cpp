@@ -13,7 +13,7 @@ int STROBE_FREQ = 50; // dHz
 int STROBE_PERIOD = 10000 / STROBE_FREQ; // ms
 int STROBE_DUTY = 10; // %
 
-int MASTER1 = 100;
+int MASTER1 = 20;
 int RED = 255;
 int GREEN = 255;
 int BLUE = 255;
