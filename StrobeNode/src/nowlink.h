@@ -5,6 +5,7 @@
 #include "ttimer.h"
 #include "libclock/fastmillis.h"
 
+
 uint8_t broadcastAddress[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
 uint64_t nowOffset = 0; 
 uint32_t sendOffset = 0; // offset to send time
@@ -13,12 +14,16 @@ bool nowOK = false;
 volatile uint64_t actualTxTime = 0;
 
 void (*rcvCallback)(uint32_t from, String msg) = NULL;
+void (*infoCallback)() = NULL;
 Ttimer* nowTimer = NULL;
 
-// nowMillis
-uint64_t nowMicros() 
-{
+uint64_t nowMicros() {
     return fastmicros64_isr() + nowOffset;
+}
+
+// nowMillis
+uint32_t nowMillis() {
+    return (uint32_t)(nowMicros() / 1000);
 }
 
 // nowAdjust
@@ -42,7 +47,7 @@ void nowBroadcast(String msg) {
     if (!nowOK) return;
     esp_err_t result = esp_now_send(broadcastAddress, (const uint8_t *)msg.c_str(), msg.length());
     if (result == ESP_OK) {
-        Serial.println("Sent with success: " + msg);
+        // Serial.println("Sent with success: " + msg);
     }
     else {
         Serial.println("Error sending the data");
@@ -65,6 +70,9 @@ void nowReceive(const uint8_t *mac, const uint8_t *data, int len)
         uint32_t from = mac[5] | mac[4] << 8 | mac[3] << 16 | mac[2] << 24;
         String msg = String((char*)data).substring(0, len);
         
+        // Print message
+        // Serial.printf("Received from %08X: %s\n", from, msg.c_str());
+
         // Call the callback
         rcvCallback(from, msg);
     }
@@ -82,7 +90,7 @@ void nowSent(const uint8_t *mac_addr, esp_now_send_status_t status)
 }
 
 // nowInit
-void nowInit( void (*rcvHook)(uint32_t from, String msg) ) 
+void nowInit( void (*rcvHook)(uint32_t from, String msg), void (*infoHook)() )
 {   
     fastinit();     // init fast clock
 
@@ -97,7 +105,7 @@ void nowInit( void (*rcvHook)(uint32_t from, String msg) )
     Serial.print("MAC Address: ");
     Serial.println(WiFi.macAddress());
 
-    esp_wifi_config_espnow_rate(WIFI_IF_STA, WIFI_PHY_RATE_1M_L); 
+    esp_wifi_config_espnow_rate(WIFI_IF_STA, WIFI_PHY_RATE_11M_S); // WIFI_PHY_RATE_1M_L
 
     // Initialize ESP-NOW
     if (esp_now_init() == ESP_OK)
@@ -106,6 +114,7 @@ void nowInit( void (*rcvHook)(uint32_t from, String msg) )
         esp_now_register_recv_cb(nowReceive);
         esp_now_register_send_cb(nowSent);
         rcvCallback = rcvHook;
+        infoCallback = infoHook;
 
         // Set up the timer to broadcast the time every second
         //
@@ -117,8 +126,11 @@ void nowInit( void (*rcvHook)(uint32_t from, String msg) )
         nowTimer->every(1000, []() {
             if (!nowOK) return;
             actualTxTime = nowMicros(); // Reset before send
-            uint64_t txTime = actualTxTime + sendOffset;
+            // uint64_t txTime = actualTxTime + sendOffset;
+            uint64_t txTime = actualTxTime + 1000;
             esp_err_t result = esp_now_send(broadcastAddress, (uint8_t*)&txTime, sizeof(txTime));
+
+            if (infoCallback) infoCallback();
         });
 
     }

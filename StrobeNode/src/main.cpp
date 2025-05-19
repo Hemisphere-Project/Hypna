@@ -1,160 +1,20 @@
 #include <Arduino.h>
-// #include <WiFi.h>
-// #include <AsyncTCP.h>
-// #include <ESPAsyncWebServer.h>
-
-#include "nowlink.h"
-#include "librmt/esp32_digital_led_lib.h"
 
 const int PIN_LED_RGBW = 32; // 26: yellow, 32: white 
+const int PIN_TRIGGER  = 26; // 26: yellow, 32: white
 const int PIN_LED_INTERNAL = 27;
-
-int STROBE_FREQ = 50; // dHz
-int STROBE_PERIOD = 10000 / STROBE_FREQ; // ms
-int STROBE_DUTY = 10; // %
-
-int MASTER1 = 20;
-int RED = 255;
-int GREEN = 255;
-int BLUE = 255;
-int WHITE = 255;
-
-int redValue1 = RED * MASTER1 / 255;
-int greenValue1 = GREEN * MASTER1 / 255;
-int blueValue1 = BLUE * MASTER1 / 255;
-int whiteValue1 = WHITE * MASTER1 / 255;
-
-int delayON = STROBE_PERIOD * STROBE_DUTY / 100;
-int delayOFF = STROBE_PERIOD * (100 - STROBE_DUTY) / 100;
-
-bool state = false;
 
 const char* ssid = "HYPNA-STROBE";
 const char* password = "HypnaStrobe";
 
+#include "nowlink.h"
+#include "strobe.h"
+#include "webserver.h"
+#include "librmt/esp32_digital_led_lib.h"
+
+
 strand_t* stripRGBW;
 strand_t* stripInternal;
-
-// AsyncWebServer server(80);
-
-/*
-  WEB CONTENT
-*/
-
-const char index_html[] PROGMEM = R"rawliteral(
-  <!DOCTYPE HTML><html>
-  <head>
-    <title>ESP Web Server</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <link rel="icon" href="data:,">
-    <style>
-      html {font-family: Arial; display: inline-block; text-align: left; background-color: black; color: white;}
-      h2 {font-size: 2.0rem;}
-      p {font-size: 2.0rem;}
-      body {max-width: 600px; margin:0px auto; padding-bottom: 25px; font-size: 1.5rem;}
-      input[type="text"], input[type="number"]  { font-size:1.5rem; }
-    </style>
-  </head>
-  <body>
-    <h2>HYPNA Strobe</h2>
-    %PLACEHOLDER%
-  <script> 
-    function update(e) {
-      var value = e.target.value;
-      var xhr = new XMLHttpRequest();
-
-      var m1 = document.getElementById("master1").value;
-      var m2 = document.getElementById("master2").value;
-      var r = document.getElementById("red").value;
-      var g = document.getElementById("green").value;
-      var b = document.getElementById("blue").value;
-      var w = document.getElementById("white").value;
-      var f = document.getElementById("freq").value;
-      var d = document.getElementById("duty").value;
-
-      xhr.open("GET", "/update?m1=" + m1 + "&m2=" + m2 + "&r=" + r + "&g=" + g + "&b=" + b + "&w=" + w + "&f=" + f + "&d=" + d, true);
-      xhr.send();
-    }
-
-    document.getElementById("master1").addEventListener("change", update);
-    document.getElementById("master2").addEventListener("change", update);
-
-    document.getElementById("red").addEventListener("change", update);
-    document.getElementById("green").addEventListener("change", update);
-    document.getElementById("blue").addEventListener("change", update);
-    document.getElementById("white").addEventListener("change", update);
-
-    document.getElementById("freq").addEventListener("change", update);
-    document.getElementById("duty").addEventListener("change", update);
-
-  </script>
-  </body>
-  </html>
-  )rawliteral";
-
-String freq(){
-  return String(STROBE_FREQ/10.0);
-}
-
-String duty(){
-  return String(STROBE_DUTY);
-}
-
-String master1(){
-  return String(MASTER1);
-}
-
-String red(){
-  return String(RED);
-}
-
-String green(){
-  return String(GREEN);
-}
-
-String blue(){
-  return String(BLUE);
-}
-
-String white(){
-  return String(WHITE);
-}
-
-// Replaces placeholder with button section in your web page
-String processor(const String& var){
-  //Serial.println(var);
-  if(var == "PLACEHOLDER"){
-    String buttons = "";
-    buttons += "<table><tr>";
-    buttons += "<td><input type=\"number\" step=\"0.1\" min=\"0.1\" max=\"100\" id=\"freq\" value=\""+freq()+"\" ></td>";
-    buttons += "<td><label for=\"freq\">Frequency</label></td>";
-    buttons += "<td>&nbsp;&nbsp;</td>";
-    buttons += "<td><input type=\"number\" min=\"0\" max=\"255\" id=\"red\" value=\""+red()+"\" ></td>";
-    buttons += "<td><label for=\"red\">Red</label></td>";
-    buttons += "</tr><tr>";
-    buttons += "<td><input type=\"number\" step=\"1\" min=\"0\" max=\"100\"  id=\"duty\"  value=\""+duty()+"\" ></td>";
-    buttons += "<td><label for=\"duty\">Duty %</label></td>";
-    buttons += "<td></td>";
-    buttons += "<td><input type=\"number\" min=\"0\" max=\"255\" id=\"green\" value=\""+green()+"\" ></td>";
-    buttons += "<td><label for=\"green\">Green</label></td>";
-    buttons += "</tr><tr>";
-    buttons += "<td><input type=\"number\" min=\"0\" max=\"255\" id=\"master1\" value=\""+master1()+"\" ></td>";
-    buttons += "<td><label for=\"master\">Master RGBW</label></td>";
-    buttons += "<td></td>";
-    buttons += "<td><input type=\"number\" min=\"0\" max=\"255\" id=\"blue\" value=\""+blue()+"\" ></td>";
-    buttons += "<td><label for=\"blue\">Blue</label></td>";
-    buttons += "</tr><tr>";
-    buttons += "<td></td>";
-    buttons += "<td></td>";
-    buttons += "<td></td>";
-    buttons += "<td><input type=\"number\" min=\"0\" max=\"255\" id=\"white\" value=\""+white()+"\" ></td>";
-    buttons += "<td><label for=\"white\">White</label></td>";
-    buttons += "</tr></table>";
-    
-    return buttons;
-  }
-  return String();
-}
 
 
 /* 
@@ -172,127 +32,79 @@ void setup()
   stripInternal = digitalLeds_addStrand(
           {.rmtChannel = 1, .gpioNum = PIN_LED_INTERNAL, .ledType = LED_WS2812B_V3, .brightLimit = 255, .numPixels = 1, .pixels = nullptr, ._stateVars = nullptr});
 
-  nowInit(NULL);
+  
+  // trigger pin (for measurement)
+  pinMode(PIN_TRIGGER, OUTPUT);
+  digitalWrite(PIN_TRIGGER, LOW);
+  
+  // Strobe init
+  strobe_set(1, 10, 255, 255, 255, 255, 255); // 1Hz, 10% duty, Master 255, RGBW 255
 
-  // WiFi.softAPConfig (IPAddress (10, 0, 0, 1), IPAddress (10, 0, 0, 1), IPAddress (255, 255, 255, 0));
-  // WiFi.softAP(ssid, password);
-  // Serial.print("Connecting to WiFi...");
-  // Serial.println("OK!");
+  // ESP-NOW timesync
+  nowInit(
+    // RECEIVE CALLBACK
+    //
+    [](uint32_t from, String msg) {
+      // message: settings S=timestampµs/Freq/Duty/Master1/Red/Green/Blue/White
+      if (msg.startsWith("S=")) {
+          // parse settings
+          uint32_t timestamp = msg.substring(2, msg.indexOf('/')).toInt();
+          String settings = msg.substring(msg.indexOf('/') + 1);
+          float Freq = settings.substring(0, settings.indexOf('/')).toFloat();
+          settings.remove(0, settings.indexOf('/') + 1);
+          int Duty = settings.substring(0, settings.indexOf('/')).toInt();
+          settings.remove(0, settings.indexOf('/') + 1);
+          int Master1 = settings.substring(0, settings.indexOf('/')).toInt();
+          settings.remove(0, settings.indexOf('/') + 1);
+          int Red = settings.substring(0, settings.indexOf('/')).toInt(); 
+          settings.remove(0, settings.indexOf('/') + 1);
+          int Green = settings.substring(0, settings.indexOf('/')).toInt();
+          settings.remove(0, settings.indexOf('/') + 1);
+          int Blue = settings.substring(0, settings.indexOf('/')).toInt();
+          settings.remove(0, settings.indexOf('/') + 1);
+          int White = settings.toInt();
+          
+          // set settings
+          // Serial.printf("REMOTE Settings: ");
+          strobe_set(timestamp, Freq, Duty, Master1, Red, Green, Blue, White);
+      }
+    }, 
+    // INFO CALLBACK
+    //
+    []() {
+      // send settings
+      nowBroadcast("S=" + String(strobe_getTS()) + "/" + String(strobe_getFreq()) + "/" + String(strobe_getDuty()) + "/" + String(strobe_getMaster1()) + "/" +
+        String(strobe_getRed()) + "/" + String(strobe_getGreen()) + "/" + String(strobe_getBlue()) + "/" + String(strobe_getWhite()));
+      // Serial.printf("INFO: %s\n", msg.c_str());
+    }
+  );
 
-  // // Route for root / web page
-  // server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
-  //   request->send_P(200, "text/html", index_html, processor);
-  // });
-
-  // server.on("/update", HTTP_GET, [] (AsyncWebServerRequest *request) {
-  //   String inputMessage;
-  //   if (request->hasParam("m1")) {
-  //     inputMessage = request->getParam("m1")->value();
-  //     MASTER1 = inputMessage.toInt();
-  //     if (MASTER1 < 0) MASTER1 = 0;
-  //     if (MASTER1 > 255) MASTER1 = 255;
-  //     Serial.printf("Master1: %d\n", MASTER1);
-  //   }
-  //   if (request->hasParam("r")) {
-  //     inputMessage = request->getParam("r")->value();
-  //     RED = inputMessage.toInt();
-  //     if (RED < 0) RED = 0;
-  //     if (RED > 255) RED = 255;
-  //     Serial.printf("Red: %d\n", RED);
-  //   }
-  //   if (request->hasParam("g")) {
-  //     inputMessage = request->getParam("g")->value();
-  //     GREEN = inputMessage.toInt();
-  //     if (GREEN < 0) GREEN = 0;
-  //     if (GREEN > 255) GREEN = 255;
-  //     Serial.printf("Green: %d\n", GREEN);
-  //   }
-  //   if (request->hasParam("b")) {
-  //     inputMessage = request->getParam("b")->value();
-  //     BLUE = inputMessage.toInt();
-  //     if (BLUE < 0) BLUE = 0;
-  //     if (BLUE > 255) BLUE = 255;
-  //     Serial.printf("Blue: %d\n", BLUE);
-  //   }
-  //   if (request->hasParam("w")) {
-  //     inputMessage = request->getParam("w")->value();
-  //     WHITE = inputMessage.toInt();
-  //     if (WHITE < 0) WHITE = 0;
-  //     if (WHITE > 255) WHITE = 255;
-  //     Serial.printf("White: %d\n", WHITE);
-  //   }
-  //   if (request->hasParam("d")) {
-  //     inputMessage = request->getParam("d")->value();
-  //     STROBE_DUTY = inputMessage.toInt();
-  //     if (STROBE_DUTY < 0) STROBE_DUTY = 0;
-  //     if (STROBE_DUTY > 100) STROBE_DUTY = 100;
-  //     Serial.printf("Duty: %d\n", STROBE_DUTY);
-  //   }
-  //   if (request->hasParam("f")) {
-  //     inputMessage = request->getParam("f")->value();
-  //     STROBE_FREQ = inputMessage.toFloat() * 10;
-  //     STROBE_PERIOD = 10000 / STROBE_FREQ;
-  //     if (STROBE_PERIOD < 0) STROBE_PERIOD = 0;
-  //     Serial.printf("Freq: %d\n", STROBE_FREQ);
-  //   }
-
-  //   // calculate new values
-  //   redValue1 = RED * MASTER1 / 255;
-  //   greenValue1 = GREEN * MASTER1 / 255;
-  //   blueValue1 = BLUE * MASTER1 / 255;
-  //   whiteValue1 = WHITE * MASTER1 / 255;
-
-  //   delayON = STROBE_PERIOD * STROBE_DUTY / 100;
-  //   delayOFF = STROBE_PERIOD * (100 - STROBE_DUTY) / 100;
-
-  //   request->send(200, "text/plain", "OK");
-  // });
-
-    
-  // // Start server
-  // server.begin();
+  // Webserver
+  webserver_init();
 }
 
-uint64_t lastTime = 0;
+int busylooped = 0;
+uint64_t unow, lastTime = 0;
 void loop() 
 {
-  int p = nowMicros() % (STROBE_PERIOD * 1000);
- 
   // Set ON
-  if (p < delayON*1000 && state == false) {
-    // Serial.printf("ON %d\n", p);
-
-    stripRGBW->pixels[0] = pixelFromRGBW(greenValue1, redValue1, blueValue1, whiteValue1);
-    for (int i = 1; i < stripRGBW->numPixels; i++) stripRGBW->pixels[i] = stripRGBW->pixels[0];
-    digitalLeds_updatePixels(stripRGBW);
-
-    stripInternal->pixels[0] = pixelFromRGBW(greenValue1, redValue1, blueValue1, whiteValue1);
-    for (int i = 1; i < stripInternal->numPixels; i++) stripInternal->pixels[i] = stripInternal->pixels[0];
-    digitalLeds_updatePixels(stripInternal);
-
-    state = true;
-    p = nowMicros() % (STROBE_PERIOD * 1000);
-    delay(delayON - p/1000 - 2);
-  } 
-
-  // Set OFF
-  if (p > delayON*1000 && state == true) {
-    // Serial.printf("OFF %d\n", p-delayON*1000);
+  if (strobe_update(nowMicros())) 
+  {
+    digitalWrite(PIN_TRIGGER, strobe_state() ? HIGH : LOW);
     
-    stripRGBW->pixels[0] = pixelFromRGBW(0, 0, 0, 0);
+    stripRGBW->pixels[0] = strobe_get();
     for (int i = 1; i < stripRGBW->numPixels; i++) stripRGBW->pixels[i] = stripRGBW->pixels[0];
     digitalLeds_updatePixels(stripRGBW);
     
-    stripInternal->pixels[0] = pixelFromRGBW(0, 0, 0, 0);
-    for (int i = 1; i < stripInternal->numPixels; i++) stripInternal->pixels[i] = stripInternal->pixels[0];
+    for (int i = 0; i < stripInternal->numPixels; i++) stripInternal->pixels[i] = stripRGBW->pixels[0];
     digitalLeds_updatePixels(stripInternal);
     
-    state = false;
-    p = nowMicros() % (STROBE_PERIOD * 1000) - delayON*1000;
-    delay(delayOFF - p/1000 - 2);
+    if (busylooped == 0) Serial.println("WARNING: no busylooped, increase busytime in strobe_sleep");
+    if (busylooped > 10) Serial.printf("WARNING: busylooped a lot (x%d), decrease busytime in strobe_sleep\n", busylooped);
+    busylooped = 0;
+
+    strobe_sleep(nowMicros());
   }
+  else busylooped += 1;
 
-  // loopTime
-  // Serial.printf("loopTime %d\n", nowMicros() - lastTime);
-  // lastTime = nowMicros();
 }

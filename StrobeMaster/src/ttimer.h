@@ -9,12 +9,12 @@ class Ttimer : public Timer {
     public:
         Ttimer() {
             // Update task
-            xTaskCreate(this->task,       // function
+            xTaskCreatePinnedToCore(this->task,       // function
               "ktimer",                     // task name
               2000,                         // stack memory
               (void *)this,                 // args
               0,                            // priority
-              NULL);                        // handler
+              NULL, 0);                        // handler
         }
 
         static void task(void *p)
